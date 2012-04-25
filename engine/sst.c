@@ -40,6 +40,7 @@
 #include <unistd.h>
 #include <sys/mman.h>
 
+#include "buffer.h"
 #include "sst.h"
 #include "debug.h"
 
@@ -51,6 +52,31 @@ struct footer{
 	__be32 count;
 	__be32 crc;
 };
+
+struct stats {
+	int mmap_size;
+	char shared[NESSDB_MAX_KEY_SIZE];
+};
+
+void _prepare_stats(struct skipnode *x, size_t count, struct stats *stats)
+{
+	size_t i;
+	struct skipnode *node = x;
+	int size = 0;
+
+	memset(stats, 0, sizeof(struct stats));
+	for (i = 0; i < count; i++) {
+		if (node->opt == ADD) {
+			size += sizeof(uint16_t);
+			size += node->klen;
+			size += sizeof(__be64);
+		}
+
+		node = node->forward[0];
+	}
+
+	stats->mmap_size = size;
+}
 
 void _add_bloom(struct sst *sst, int fd, int count)
 {
@@ -145,6 +171,8 @@ struct sst *sst_new(const char *basedir)
 	s->mutexer.lsn = -1;
 	pthread_mutex_init(&s->mutexer.mutex, NULL);
 
+	s->buf = buffer_new(1024);
+
 	/* SST files load */
 	_sst_load(s);
 	
@@ -158,16 +186,16 @@ void *_write_mmap(struct sst *sst, struct skipnode *x, size_t count, int need_ne
 {
 	int i, j, c_clone;
 	int fd;
-	int sizes;
 	int result;
 	char file[FILE_PATH_SIZE];
+	char *mmaps;
 	struct skipnode *last;
-	struct sst_block *blks;
 	struct footer footer;
+	struct stats stats;
 
 	int fsize = sizeof(struct footer);
 
-	sizes = count * sizeof(struct sst_block);
+	_prepare_stats(x, count, &stats);
 
 	memset(file, 0, FILE_PATH_SIZE);
 	snprintf(file, FILE_PATH_SIZE, "%s/%s", sst->basedir, sst->name);
@@ -175,25 +203,33 @@ void *_write_mmap(struct sst *sst, struct skipnode *x, size_t count, int need_ne
 	if (fd == -1)
 		__PANIC("create sst file error");
 
-	if (lseek(fd, sizes - 1, SEEK_SET) == -1)
+	if (lseek(fd, stats.mmap_size - 1, SEEK_SET) == -1)
 		__PANIC("lseek sst error");
 
 	result = write(fd, "", 1);
 	if (result == -1)
 		__PANIC("write empty error");
 
-	blks = mmap(0, sizes, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-	if (blks == MAP_FAILED) {
+	mmaps = mmap(0, stats.mmap_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	if (mmaps == MAP_FAILED) {
 		__PANIC("map error when write");
 	}
 
 	last = x;
 	c_clone = count;
+	int cur = 0;
+	char *line;
+	int b_sizes;
 	for (i = 0, j= 0; i < c_clone; i++) {
 		if (x->opt == ADD) {
-			memset(blks[j].key, 0, NESSDB_MAX_KEY_SIZE);
-			memcpy(blks[j].key, x->key, strlen(x->key));
-			blks[j].offset=to_be64(x->val);
+			b_sizes = (sizeof(short) + x->klen + sizeof(uint64_t));
+			buffer_putshort(sst->buf, x->klen);
+			buffer_putstr(sst->buf, x->key, x->klen);
+			buffer_putlong(sst->buf, x->val);
+			line = buffer_detach(sst->buf);
+
+			memcpy(mmaps + cur, line, b_sizes); 
+			cur += b_sizes;
 			j++;
 		} else
 			count--;
@@ -203,12 +239,12 @@ void *_write_mmap(struct sst *sst, struct skipnode *x, size_t count, int need_ne
 	}
 
 #ifdef MSYNC
-	if (msync(blks, sizes, MS_SYNC) == -1) {
+	if (msync(mmaps, stats.mmap_size, MS_SYNC) == -1) {
 		__DEBUG(LEVEL_ERROR, "Msync error");
 	}
 #endif
 
-	if (munmap(blks, sizes) == -1) {
+	if (munmap(mmaps, stats.mmap_size) == -1) {
 		__DEBUG(LEVEL_ERROR, "Un-mmapping the file");
 	}
 	
@@ -284,7 +320,10 @@ struct skiplist *_read_mmap(struct sst *sst, size_t count)
 	/* Merge */
 	merge = skiplist_new(fcount + count + 1);
 	for (i = 0; i < fcount; i++) {
-			skiplist_insert(merge, blks[i].key, from_be64(blks[i].offset), ADD);
+		struct slice sk;
+		sk.len = blks[i].klen;
+		sk.data = blks[i].key;
+		skiplist_insert(merge, &sk, from_be64(blks[i].offset), ADD);
 	}
 	
 	if (munmap(blks, blk_sizes) == -1)

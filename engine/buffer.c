@@ -115,6 +115,16 @@ void buffer_putint(struct buffer *b, int val)
 	b->buf[b->NUL++] = val & 0xff;
 }
 
+/*
+ * Big-Endian
+ */
+void buffer_putshort(struct buffer *b, short val)
+{
+	_buffer_extendby(b, sizeof(short));
+	b->buf[b->NUL++] = (val >> 8) & 0xff;
+	b->buf[b->NUL++] = val & 0xff;
+}
+
 uint32_t u32_from_big(unsigned char *buf) {
 	uint32_t val = 0;
 
