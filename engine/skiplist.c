@@ -130,7 +130,7 @@ int skiplist_insert(struct skiplist *list, struct slice *sk, uint64_t val, OPT o
 	if ((x =_pool_alloc(list,sizeof(struct skipnode) + new_level*sizeof(struct skipnode *))) == 0)
 		__PANIC("Pool alloc error, maybe less memory");
 
-	memcpy(x->key, sk->key, sk->len);
+	memcpy(x->key, sk->data, sk->len);
 	x->klen = sk->len;
 	x->val = val;
 	x->opt = opt;

@@ -51,6 +51,7 @@ struct footer{
 	char key[NESSDB_MAX_KEY_SIZE];
 	__be32 count;
 	__be32 crc;
+	__be32 size;
 };
 
 struct stats {
@@ -179,9 +180,6 @@ struct sst *sst_new(const char *basedir)
 	return s;
 }
 
-/*
- * Write node to index file
- */
 void *_write_mmap(struct sst *sst, struct skipnode *x, size_t count, int need_new)
 {
 	int i, j, c_clone;
@@ -224,7 +222,7 @@ void *_write_mmap(struct sst *sst, struct skipnode *x, size_t count, int need_ne
 		if (x->opt == ADD) {
 			b_sizes = (sizeof(short) + x->klen + sizeof(uint64_t));
 			buffer_putshort(sst->buf, x->klen);
-			buffer_putstr(sst->buf, x->key, x->klen);
+			buffer_putnstr(sst->buf, x->key, x->klen);
 			buffer_putlong(sst->buf, x->val);
 			line = buffer_detach(sst->buf);
 
@@ -250,6 +248,7 @@ void *_write_mmap(struct sst *sst, struct skipnode *x, size_t count, int need_ne
 	
 	footer.count = to_be32(count);
 	footer.crc = to_be32(F_CRC);
+	footer.size = to_be32(stats.mmap_size);
 	memset(footer.key, 0, NESSDB_MAX_KEY_SIZE);
 	memcpy(footer.key, last->key, strlen(last->key));
 
@@ -285,7 +284,7 @@ struct skiplist *_read_mmap(struct sst *sst, size_t count)
 	int fcount;
 	int blk_sizes;
 	char file[FILE_PATH_SIZE];
-	struct sst_block *blks;
+	char *mmaps;
 	struct skiplist *merge = NULL;
 	struct footer footer;
 	int fsize = sizeof(struct footer);
@@ -308,25 +307,42 @@ struct skiplist *_read_mmap(struct sst *sst, size_t count)
 
 	fcount = from_be32(footer.count);
 
-	blk_sizes = fcount * sizeof(struct sst_block);
+	blk_sizes = from_be32(footer.size);
 
 	/* Blocks read */
-	blks= mmap(0, blk_sizes, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-	if (blks == MAP_FAILED) {
+	mmaps = mmap(0, blk_sizes, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	if (mmaps == MAP_FAILED) {
 		__PANIC("map error when read");
 		goto out;
 	}
 
 	/* Merge */
+
+	int cur = 0;
+	struct slice sk;
+	uint64_t offset;
+
 	merge = skiplist_new(fcount + count + 1);
 	for (i = 0; i < fcount; i++) {
-		struct slice sk;
-		sk.len = blks[i].klen;
-		sk.data = blks[i].key;
-		skiplist_insert(merge, &sk, from_be64(blks[i].offset), ADD);
+		uint16_t klen = u16_from_big((unsigned char*)(mmaps + cur));
+		cur += sizeof(klen);
+
+		char key[klen + 1];
+
+		memcpy(key, mmaps + cur, klen);
+		key[klen] = '\0';
+
+		sk.len = klen;
+		sk.data = key;
+		cur += klen;
+
+		offset = u64_from_big((unsigned char*)(mmaps + cur));
+		cur += sizeof(offset);
+
+		skiplist_insert(merge, &sk, offset, ADD);
 	}
 	
-	if (munmap(blks, blk_sizes) == -1)
+	if (munmap(mmaps, blk_sizes) == -1)
 		__DEBUG(LEVEL_ERROR, "Un-mmapping the file");
 
 out:

@@ -24,7 +24,7 @@ struct mutexer{
 struct sst_block{
 	uint16_t klen;
 	char key[NESSDB_MAX_KEY_SIZE];
-	__be64  offset;
+	uint64_t  offset;
 }__attribute__((packed));
 
 struct sst{

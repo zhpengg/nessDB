@@ -164,7 +164,7 @@ int index_add(struct index *idx, struct slice *sk, struct slice *sv)
 		idx->lsn++;
 		log_next(idx->log, idx->lsn);
 	}
-	skiplist_insert(idx->list, sk->data, value_offset, sv == NULL ? DEL : ADD);
+	skiplist_insert(idx->list, sk, value_offset, sv == NULL ? DEL : ADD);
 	
 	/* Add to Bloomfilter */
 	if (sv) {

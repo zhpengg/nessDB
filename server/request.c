@@ -199,7 +199,7 @@ int request_parse(struct request *req)
 
 	while (req->multilen) {
 		int argv_len;
-		char *v;
+		char *v = NULL;
 
 		if (req->lastlen == 0) {
 			/*parse argv len*/

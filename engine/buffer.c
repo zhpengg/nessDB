@@ -125,6 +125,14 @@ void buffer_putshort(struct buffer *b, short val)
 	b->buf[b->NUL++] = val & 0xff;
 }
 
+uint16_t u16_from_big(unsigned char *buf) {
+	uint16_t val = 0;
+
+	val |= buf[0] << 8;
+	val |= buf[1];
+	return val;
+}
+
 uint32_t u32_from_big(unsigned char *buf) {
 	uint32_t val = 0;
 

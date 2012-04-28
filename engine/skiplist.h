@@ -10,6 +10,7 @@
 #define _SKIPLIST_H
 
 #include <stdint.h>
+#include "util.h"
 #include "config.h"
 
 #define MAXLEVEL (15)

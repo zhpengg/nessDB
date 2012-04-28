@@ -112,6 +112,7 @@ int _log_read(char *logname, struct skiplist *list)
 		uint64_t off;
 		char key[NESSDB_MAX_KEY_SIZE];
 		char klenstr[4], offstr[8], optstr[4];
+		struct slice sk;
 
 		memset(klenstr, 0, 4);
 		memset(offstr, 0, 8);
@@ -133,6 +134,9 @@ int _log_read(char *logname, struct skiplist *list)
 			return -1;
 		}
 
+		sk.len = klen;
+		sk.data = key;
+
 		isize += klen;
 
 		/* read data offset */
@@ -153,10 +157,10 @@ int _log_read(char *logname, struct skiplist *list)
 		isize += 1;
 		if (memcmp(optstr, "A", 1) == 0) {
 			count++;
-			skiplist_insert(list, key, off, ADD);
+			skiplist_insert(list, &sk, off, ADD);
 		} else {
 			del_count++;
-			skiplist_insert(list, key, off, DEL);
+			skiplist_insert(list, &sk, off, DEL);
 		}
 
 		rem -= isize;
