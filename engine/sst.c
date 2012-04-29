@@ -79,27 +79,6 @@ void _prepare_stats(struct skipnode *x, size_t count, struct stats *stats)
 	stats->mmap_size = size;
 }
 
-void _add_bloom(struct sst *sst, int fd, int count)
-{
-	int i;
-	int blk_sizes;
-	struct sst_block *blks;
-
-	blk_sizes = count * sizeof(struct sst_block);
-
-	blks= mmap(0, blk_sizes, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-	if (blks == MAP_FAILED) {
-		__PANIC("Error:Can't mmap file when add bloom");
-		return;
-	}
-
-	for (i = 0; i < count; i++) 
-		bloom_add(sst->bloom, blks[i].key);
-	
-	if (munmap(blks, blk_sizes) == -1)
-		__DEBUG(LEVEL_ERROR, "Error:un-mmapping the file");
-}
-
 void _sst_load(struct sst *sst)
 {
 	int fd, result, all_count = 0;
@@ -136,9 +115,6 @@ void _sst_load(struct sst *sst)
 				close(fd);
 				continue;
 			}
-
-			/* Add to bloom */
-			_add_bloom(sst, fd, fcount);
 
 			all_count += fcount;
 						
@@ -359,7 +335,7 @@ uint64_t _read_offset(struct sst *sst, struct slice *sk)
 	int result;
 	uint64_t off = 0UL;
 	char file[FILE_PATH_SIZE];
-	struct sst_block *blks;
+	char *mmaps;
 	struct footer footer;
 	int fsize = sizeof(struct footer);
 
@@ -384,32 +360,36 @@ uint64_t _read_offset(struct sst *sst, struct slice *sk)
 		goto out;
 	}
 
+
 	fcount = from_be32(footer.count);
-	blk_sizes = fcount * sizeof(struct sst_block);
+	blk_sizes = from_be32(footer.size); 
 
 	/* Blocks read */
-	blks= mmap(0, blk_sizes, PROT_READ, MAP_SHARED, fd, 0);
-	if (blks == MAP_FAILED) {
+	mmaps = mmap(0, blk_sizes, PROT_READ, MAP_SHARED, fd, 0);
+	if (mmaps == MAP_FAILED) {
 		__DEBUG(LEVEL_ERROR, "Map_failed when read");
 		goto out;
 	}
 
-	size_t left = 0, right = fcount, i = 0;
-	while (left < right) {
-		i = (right -left) / 2 +left;
-		int cmp = strcmp(sk->data, blks[i].key);
+	int i;
+	int cur = 0;
+
+	for (i = 0; i < fcount; i++) {
+		uint16_t klen = u16_from_big((unsigned char*)(mmaps + cur));
+		cur += sizeof(klen);
+
+		int cmp = memcmp(sk->data, mmaps + cur , klen);
+		cur += klen;
 		if (cmp == 0) {
-			off = from_be64(blks[i].offset);	
-			break ;
+			off = u64_from_big((unsigned char*)(mmaps + cur));
+			break;
 		}
 
-		if (cmp < 0)
-			right = i;
-		else
-			left = i + 1;
+		cur += sizeof(off);
 	}
-	
-	if (munmap(blks, blk_sizes) == -1)
+
+
+	if (munmap(mmaps, blk_sizes) == -1)
 		__DEBUG(LEVEL_ERROR, "un-mmapping the file");
 
 out:

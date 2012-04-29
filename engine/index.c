@@ -167,9 +167,7 @@ int index_add(struct index *idx, struct slice *sk, struct slice *sv)
 	skiplist_insert(idx->list, sk, value_offset, sv == NULL ? DEL : ADD);
 	
 	/* Add to Bloomfilter */
-	if (sv) {
-		bloom_add(idx->sst->bloom, sk->data);
-	} else
+	if (!sv) 
 		idx->mtbl_rem_count++;
 
 	return 1;
@@ -232,16 +230,11 @@ int index_get(struct index *idx, struct slice *sk, struct slice *sv)
 
 
 	/* 
-	 * 0) Get from bloomfilter,if bloom_get return 1,next
+	 * !0) Get from bloomfilter,if bloom_get return 1,next
 	 * 1) First lookup from active memtable
  	 * 2) Then from merge memtable 
  	 * 3) Last from sst on-disk indexes
  	 */
-	ret = bloom_get(idx->sst->bloom, sk->data);
-	if (ret == 0)
-		return 0;
-	
-	idx->bloom_hits++;
 	cur_list = idx->list;
 	node = skiplist_lookup(cur_list, sk->data);
 	if (node){
