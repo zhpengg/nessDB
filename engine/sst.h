@@ -21,12 +21,6 @@ struct mutexer{
 	pthread_mutex_t mutex;
 };
 
-struct sst_block{
-	uint16_t klen;
-	char key[NESSDB_MAX_KEY_SIZE];
-	uint64_t  offset;
-}__attribute__((packed));
-
 struct sst{
 	char basedir[FILE_PATH_SIZE];
 	char name[FILE_NAME_SIZE];
@@ -34,7 +28,6 @@ struct sst{
 	struct meta *meta;
 	struct bloom *bloom;
 	struct mutexer mutexer;
-	struct buffer *buf;
 };
 
 struct sst *sst_new(const char *basedir);
