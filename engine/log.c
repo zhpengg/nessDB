@@ -118,13 +118,13 @@ int _log_read(char *logname, struct skiplist *list)
 		memset(optstr, 0, 4);
 		
 		/* read key length */
-		if (read(fd, &klenstr, sizeof(int)) != sizeof(int)) {
+		if (read(fd, &klenstr, sizeof(klenstr)) != sizeof(klenstr)) {
 			__PANIC("error when read key length");
 			return -1;
 		}
 
 		klen = u32_from_big((unsigned char*)klenstr);
-		isize += sizeof(int);
+		isize += sizeof(klenstr);
 		
 		/* read key */
 		memset(key, 0, NESSDB_MAX_KEY_SIZE);
@@ -136,13 +136,13 @@ int _log_read(char *logname, struct skiplist *list)
 		isize += klen;
 
 		/* read data offset */
-		if (read(fd, &offstr, sizeof(uint64_t)) != sizeof(uint64_t)) {
+		if (read(fd, &offstr, sizeof(offstr)) != sizeof(offstr)) {
 			__PANIC("read error when read data offset");
 			return -1;
 		}
 
 		off = u64_from_big((unsigned char*)offstr);
-		isize += sizeof(uint64_t);
+		isize += sizeof(offstr);
 
 		/* read opteration */
 		if (read(fd, &optstr, 1) != 1) {

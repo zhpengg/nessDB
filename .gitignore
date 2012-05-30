@@ -12,3 +12,4 @@ db-bench
 db-server
 core
 *.event
+tags
